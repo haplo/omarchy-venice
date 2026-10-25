@@ -170,8 +170,10 @@ balance() {
   }
   trap 'rm -f "$body" "$errf"' EXIT INT TERM
 
+  # --config - is what makes curl read the headers from stdin. Without it the
+  # pipe is silently ignored and the request goes out unauthenticated.
   http=$(printf 'header = "Authorization: Bearer %s"\nheader = "Accept: application/json"\nheader = "User-Agent: omarchy-venice/0.1"\n' "$TOKEN" \
-    | curl -sS --connect-timeout 5 --max-time 12 \
+    | curl -sS --config - --connect-timeout 5 --max-time 12 \
         -o "$body" -w '%{http_code}' "$API_URL" 2>"$errf")
   curl_rc=$?
 

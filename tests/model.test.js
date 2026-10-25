@@ -44,6 +44,25 @@ test("parseResult surfaces helper failures and malformed payloads", () => {
   assert.equal(Model.parseResult(JSON.stringify({ ok: true })).kind, "parse")
 })
 
+test("parseAction accepts store replies without a balance payload", () => {
+  assert.deepEqual(Model.parseAction(JSON.stringify({ ok: true, storage: "keyring" })),
+    { ok: true, storage: "keyring" })
+  assert.deepEqual(Model.parseAction(JSON.stringify({ ok: true })),
+    { ok: true, storage: "" })
+
+  const locked = Model.parseAction(JSON.stringify({
+    ok: false, kind: "keyring", message: "The keyring is locked"
+  }))
+  assert.equal(locked.ok, false)
+  assert.equal(locked.kind, "keyring")
+  assert.equal(locked.message, "The keyring is locked")
+
+  assert.equal(Model.parseAction("").kind, "parse")
+  assert.equal(Model.parseAction("not json").kind, "parse")
+  assert.equal(Model.parseAction("{}").kind, "parse")
+  assert.equal(Model.parseAction(JSON.stringify({ storage: "keyring" })).kind, "parse")
+})
+
 test("normalize fills missing fields with zero and accepts numeric strings", () => {
   const full = Model.normalize({
     canConsume: true,

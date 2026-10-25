@@ -204,7 +204,7 @@ Item {
     }
     onExited: function(exitCode) {
       root.storeBusy = false
-      var parsed = Model.parseResult(String(storeOut.text || "").trim())
+      var parsed = Model.parseAction(String(storeOut.text || "").trim())
       if (!parsed.ok) {
         root.storeError = parsed.message || String(storeErr.text || "Could not save the token").trim()
         root.errorKind = parsed.kind || "keyring"

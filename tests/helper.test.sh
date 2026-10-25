@@ -107,6 +107,8 @@ check_json "$CAPTURE_OUT" '.ok == true and .storage == "file" and .data.balances
 
 grep -q "Authorization: Bearer $TOKEN" "$tmp/curl-stdin.txt" \
   || fail "token was not sent to curl over stdin"
+grep -q -- "--config -" "$tmp/curl-argv.txt" \
+  || fail "curl was not told to read the headers from stdin (--config -)"
 if grep -q "$TOKEN" "$tmp/curl-argv.txt"; then
   fail "token leaked into curl argv"
 fi

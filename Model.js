@@ -50,6 +50,34 @@ function parseResult(text) {
   return { ok: true, data: parsed.data, storage: String(parsed.storage || "") }
 }
 
+// The store/clear commands answer {"ok":true,"storage":"keyring"} with no
+// balance payload. Using parseResult for those replies made a successful
+// token save look like "Balance response was missing data".
+function parseAction(text) {
+  var raw = String(text || "").trim()
+  if (raw === "") return { ok: false, kind: "parse", message: "Empty response from the helper" }
+  var parsed
+  try {
+    parsed = JSON.parse(raw)
+  } catch (e) {
+    return { ok: false, kind: "parse", message: "Unreadable response from the helper" }
+  }
+  if (!parsed || typeof parsed !== "object") {
+    return { ok: false, kind: "parse", message: "Unreadable response from the helper" }
+  }
+  if (parsed.ok === false) {
+    return {
+      ok: false,
+      kind: String(parsed.kind || "parse"),
+      message: String(parsed.message || "Action failed")
+    }
+  }
+  if (parsed.ok !== true) {
+    return { ok: false, kind: "parse", message: "Unreadable response from the helper" }
+  }
+  return { ok: true, storage: String(parsed.storage || "") }
+}
+
 function normalize(data) {
   var d = (data && typeof data === "object") ? data : {}
   var b = (d.balances && typeof d.balances === "object") ? d.balances : {}
@@ -216,6 +244,7 @@ if (typeof module !== "undefined" && module.exports) {
     number: number,
     clamp: clamp,
     parseResult: parseResult,
+    parseAction: parseAction,
     normalize: normalize,
     diemPercent: diemPercent,
     tier: tier,
