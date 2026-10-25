@@ -35,7 +35,8 @@ light, dark, mono or colourful — gets a widget that looks like it belongs.
   it with `autoInstallApp false`. Chat and `c` open the app window, focusing
   the existing one when it is already running.
 - **Keyboard**: `r` refresh, `c` open Chat in the app window, `a` open API
-  keys in the browser, `Esc` close.
+  keys in the browser, `Esc` close. Chat and API keys dismiss the panel before
+  handing off; Install / Update / Retry keep it open.
 - **One poller for all monitors**: the widget declares a `service`, so a
   multi-monitor bar does not make two API requests a minute.
 
@@ -153,6 +154,8 @@ is the balance lookup to `api.venice.ai`.
 omarchy-shell net.fidelramos.venice status     # one-line summary
 omarchy-shell net.fidelramos.venice refresh
 omarchy-shell net.fidelramos.venice toggle
+omarchy-shell net.fidelramos.venice chat       # close the panel, open Chat
+omarchy-shell net.fidelramos.venice api        # close the panel, open API keys
 ```
 
 - **Keyring unavailable**: unlock it (your login keyring is normally unlocked

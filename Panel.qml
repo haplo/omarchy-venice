@@ -179,10 +179,14 @@ Panel {
 
   function refresh() { if (venice) venice.refresh(true) }
   function openChat() {
+    root.close()
     if (venice) venice.openApp()
     else Qt.openUrlExternally("https://venice.ai/chat")
   }
-  function openApi() { Qt.openUrlExternally("https://venice.ai/settings/api") }
+  function openApi() {
+    root.close()
+    Qt.openUrlExternally("https://venice.ai/settings/api")
+  }
 
   function appAction() {
     if (!venice || appBusy) return
@@ -258,6 +262,8 @@ Panel {
     function hide(): void { root.close() }
     function toggle(): void { root.toggle() }
     function refresh(): string { root.refresh(); return "ok" }
+    function chat(): void { root.openChat() }
+    function api(): void { root.openApi() }
     function status(): string {
       if (!root.venice) return "unavailable"
       if (root.venice.needsToken) return root.venice.hasToken ? "token rejected" : "no token"
