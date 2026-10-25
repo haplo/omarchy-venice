@@ -176,6 +176,14 @@ Item {
     ])
   }
 
+  function openApiPage() {
+    Quickshell.execDetached([
+      "omarchy-launch-or-focus-webapp",
+      "venice.ai__settings_api",
+      "https://venice.ai/settings/api"
+    ])
+  }
+
   // One-shot: only after a successful balance proves the plugin is really in
   // use, and only once the panel's settings have arrived (autoInstallApp can
   // be turned off). The helper's marker makes this survive restarts.

@@ -178,14 +178,35 @@ Panel {
   // ---------------------------------------------------------------- actions
 
   function refresh() { if (venice) venice.refresh(true) }
+  // Let the panel release keyboard focus (and finish its 140ms fade) before
+  // focusing an app window, otherwise the focus restore to the previous
+  // window lands after the handoff and steals it back.
+  property string pendingLink: ""
+  Timer {
+    id: linkTimer
+    interval: 200
+    repeat: false
+    onTriggered: {
+      var target = root.pendingLink
+      root.pendingLink = ""
+      if (target === "chat") {
+        if (root.venice) root.venice.openApp()
+        else Qt.openUrlExternally("https://venice.ai/chat")
+      } else if (target === "api") {
+        if (root.venice) root.venice.openApiPage()
+      }
+    }
+  }
+
   function openChat() {
     root.close()
-    if (venice) venice.openApp()
-    else Qt.openUrlExternally("https://venice.ai/chat")
+    root.pendingLink = "chat"
+    linkTimer.restart()
   }
   function openApi() {
     root.close()
-    Qt.openUrlExternally("https://venice.ai/settings/api")
+    root.pendingLink = "api"
+    linkTimer.restart()
   }
 
   function appAction() {
@@ -751,7 +772,7 @@ Panel {
             Button {
               text: "API keys"
               bordered: true
-              tooltipText: "Open the Venice.ai API token page in your browser"
+              tooltipText: "Open the Venice.ai API token page in its app window"
               foreground: root.foreground
               fontFamily: root.fontFamily
               onClicked: root.openApi()
