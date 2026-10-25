@@ -87,7 +87,7 @@ omarchy bar set net.fidelramos.venice warnAtPercent 15
 
 | Key | Default | What it does |
 | --- | --- | --- |
-| `refreshIntervalSec` | `60` | Balance poll interval (15–3600). Polling pauses after a rejected token and backs off for 5 minutes when the token backend is unavailable. |
+| `refreshIntervalSec` | `30` | Balance poll interval (15–3600). Polling pauses after a rejected token and backs off for 5 minutes when the token backend is unavailable. |
 | `barLabel` | `none` | `none` is the ring only. `auto` is the DIEM percentage when staking, otherwise USD. Also `percent`, `usd`, `diem`, `both`. |
 | `warnAtPercent` | `25` | At or below this percentage of the DIEM allocation the ring and progress bar switch to `urgent`. |
 | `tokenStorage` | `keyring` | `keyring` or `file`. See above. |

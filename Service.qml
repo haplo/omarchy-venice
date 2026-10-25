@@ -32,7 +32,7 @@ Item {
   readonly property string pluginDirectory: Model.fileUrlPath(Qt.resolvedUrl("."))
   readonly property string helperPath: pluginDirectory + "/bin/venice-billing"
 
-  readonly property int refreshIntervalSec: intSetting("refreshIntervalSec", 60, 15, 3600)
+  readonly property int refreshIntervalSec: intSetting("refreshIntervalSec", 30, 15, 3600)
   readonly property int warnAtPercent: intSetting("warnAtPercent", 25, 5, 50)
   readonly property string tokenStorage: storageSetting()
 

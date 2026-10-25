@@ -27,7 +27,7 @@
     "allowMultiple": false,
     "defaultSection": "right",
     "defaults": {
-      "refreshIntervalSec": 60,
+      "refreshIntervalSec": 30,
       "barLabel": "none",
       "warnAtPercent": 25,
       "tokenStorage": "keyring"
@@ -40,7 +40,7 @@
         "min": 15,
         "max": 3600,
         "step": 15,
-        "defaultValue": 60,
+        "defaultValue": 30,
         "description": "How often the balance is re-read. Requests are paused automatically after an authentication failure."
       },
       {
