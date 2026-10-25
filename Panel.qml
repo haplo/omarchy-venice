@@ -21,9 +21,14 @@ Panel {
     : null
   readonly property var venice: sharedService || localService
 
-  function pushSettings() { if (venice) venice.settings = settings }
+  function pushSettings() {
+    if (!venice) return
+    venice.settings = settings
+    venice.settingsReady = true
+  }
   onSettingsChanged: pushSettings()
   onVeniceChanged: pushSettings()
+  Component.onCompleted: pushSettings()
 
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
@@ -134,6 +139,35 @@ Panel {
     return (venice.errorKind !== "" ? "Last balance " : "Updated ") + stamp
   }
 
+  // -------------------------------------------------------------- app launcher
+
+  readonly property string appStatus: venice ? venice.appStatus : "unknown"
+  readonly property bool appBusy: venice ? venice.appBusy : false
+  readonly property string appError: venice ? venice.appError : ""
+  readonly property bool appNeedsInstall: appStatus === "missing"
+    || appStatus === "outdated" || appStatus === "error"
+
+  readonly property string appCaption: {
+    switch (appStatus) {
+      case "installed": return "Installed · Chat opens in its own window"
+      case "outdated": return "The launcher still opens the landing page"
+      case "missing": return "Not in your app launcher"
+      case "foreign": return "Another Venice.ai launcher exists; left alone"
+      case "installing": return "Installing the app…"
+      case "error": return "Could not install the app"
+      default: return "Checking…"
+    }
+  }
+
+  readonly property string appButtonText: {
+    if (appBusy || appStatus === "installing") return "Installing…"
+    if (appStatus === "missing") return "Install app"
+    if (appStatus === "outdated") return "Update to Chat"
+    if (appStatus === "error") return "Retry"
+    if (appStatus === "installed" || appStatus === "foreign") return "Open app"
+    return "Checking…"
+  }
+
   property string actionStatus: ""
   Timer {
     id: actionTimer
@@ -144,8 +178,17 @@ Panel {
   // ---------------------------------------------------------------- actions
 
   function refresh() { if (venice) venice.refresh(true) }
-  function openChat() { Qt.openUrlExternally("https://venice.ai/chat") }
+  function openChat() {
+    if (venice) venice.openApp()
+    else Qt.openUrlExternally("https://venice.ai/chat")
+  }
   function openApi() { Qt.openUrlExternally("https://venice.ai/settings/api") }
+
+  function appAction() {
+    if (!venice || appBusy) return
+    if (appNeedsInstall) venice.installApp()
+    else if (appStatus === "installed" || appStatus === "foreign") root.openChat()
+  }
 
   function copySummary() {
     if (!bal) return
@@ -182,6 +225,7 @@ Panel {
       tokenField.text = ""
       return
     }
+    if (venice) venice.checkApp()
     if (venice && venice.needsToken)
       Qt.callLater(function() { tokenField.forceActiveFocus() })
     else
@@ -633,6 +677,51 @@ Panel {
           }
         }
 
+        // -------------------------------------------------------------- app
+
+        Column {
+          width: parent.width
+          spacing: Commons.Style.space(6)
+
+          PanelSeparator { foreground: root.foreground }
+
+          PanelSectionHeader {
+            text: "APP"
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+          }
+
+          Text {
+            width: parent.width
+            text: root.appCaption
+            color: root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Commons.Style.font.body
+            wrapMode: Text.WordWrap
+          }
+
+          Button {
+            text: root.appButtonText
+            bordered: true
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            enabled: !root.appBusy
+              && root.appStatus !== "unknown"
+              && root.appStatus !== "installing"
+            onClicked: root.appAction()
+          }
+
+          Text {
+            width: parent.width
+            visible: root.appStatus === "error" && root.appError !== ""
+            text: root.appError
+            color: root.urgent
+            font.family: root.fontFamily
+            font.pixelSize: Commons.Style.font.caption
+            wrapMode: Text.WordWrap
+          }
+        }
+
         // ----------------------------------------------------------- footer
 
         Column {
@@ -647,6 +736,7 @@ Panel {
             Button {
               text: "Chat"
               bordered: true
+              tooltipText: "Open Venice.ai Chat in its app window"
               foreground: root.foreground
               fontFamily: root.fontFamily
               onClicked: root.openChat()
@@ -655,6 +745,7 @@ Panel {
             Button {
               text: "API keys"
               bordered: true
+              tooltipText: "Open the Venice.ai API token page in your browser"
               foreground: root.foreground
               fontFamily: root.fontFamily
               onClicked: root.openApi()

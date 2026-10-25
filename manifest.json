@@ -30,7 +30,8 @@
       "refreshIntervalSec": 30,
       "barLabel": "none",
       "warnAtPercent": 25,
-      "tokenStorage": "keyring"
+      "tokenStorage": "keyring",
+      "autoInstallApp": true
     },
     "schema": [
       {
@@ -78,6 +79,13 @@
         ],
         "defaultValue": "keyring",
         "description": "keyring: the system Secret Service (gnome-keyring), no plaintext on disk. file: a 0600 file in ~/.local/state/venice, for hosts where the keyring is locked or unavailable."
+      },
+      {
+        "key": "autoInstallApp",
+        "type": "boolean",
+        "label": "Install the Venice.ai app automatically",
+        "defaultValue": true,
+        "description": "After the first successful balance, create or update a Venice.ai launcher that opens https://venice.ai/chat. Runs once; turn off to leave your app launcher untouched."
       }
     ]
   }

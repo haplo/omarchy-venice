@@ -78,6 +78,42 @@ function parseAction(text) {
   return { ok: true, storage: String(parsed.storage || "") }
 }
 
+// Launcher status from bin/venice-app: installed / managed / chatUrl / foreign.
+function parseAppStatus(text) {
+  var raw = String(text || "").trim()
+  if (raw === "") return { ok: false, kind: "parse", message: "Empty response from the app helper" }
+  var parsed
+  try {
+    parsed = JSON.parse(raw)
+  } catch (e) {
+    return { ok: false, kind: "parse", message: "Unreadable response from the app helper" }
+  }
+  if (!parsed || typeof parsed !== "object") {
+    return { ok: false, kind: "parse", message: "Unreadable response from the app helper" }
+  }
+  if (parsed.ok === false) {
+    return {
+      ok: false,
+      kind: String(parsed.kind || "parse"),
+      message: String(parsed.message || "Could not read the app status")
+    }
+  }
+  if (parsed.ok !== true) {
+    return { ok: false, kind: "parse", message: "Unreadable response from the app helper" }
+  }
+  return {
+    ok: true,
+    installed: parsed.installed === true,
+    managed: parsed.managed === true,
+    chatUrl: parsed.chatUrl === true,
+    foreign: parsed.foreign === true,
+    marker: parsed.marker === true,
+    url: String(parsed.url || ""),
+    target: String(parsed.target || ""),
+    name: String(parsed.name || "")
+  }
+}
+
 function normalize(data) {
   var d = (data && typeof data === "object") ? data : {}
   var b = (d.balances && typeof d.balances === "object") ? d.balances : {}
@@ -245,6 +281,7 @@ if (typeof module !== "undefined" && module.exports) {
     clamp: clamp,
     parseResult: parseResult,
     parseAction: parseAction,
+    parseAppStatus: parseAppStatus,
     normalize: normalize,
     diemPercent: diemPercent,
     tier: tier,

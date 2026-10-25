@@ -63,6 +63,39 @@ test("parseAction accepts store replies without a balance payload", () => {
   assert.equal(Model.parseAction(JSON.stringify({ storage: "keyring" })).kind, "parse")
 })
 
+test("parseAppStatus understands the launcher states", () => {
+  const installed = Model.parseAppStatus(JSON.stringify({
+    ok: true, name: "Venice.ai", target: "https://venice.ai/chat",
+    url: "https://venice.ai/chat", installed: true, managed: true,
+    chatUrl: true, foreign: false, marker: true
+  }))
+  assert.equal(installed.ok, true)
+  assert.equal(installed.installed, true)
+  assert.equal(installed.managed, true)
+  assert.equal(installed.chatUrl, true)
+  assert.equal(installed.foreign, false)
+  assert.equal(installed.marker, true)
+  assert.equal(installed.url, "https://venice.ai/chat")
+  assert.equal(installed.target, "https://venice.ai/chat")
+
+  const missing = Model.parseAppStatus(JSON.stringify({ ok: true, installed: false }))
+  assert.equal(missing.ok, true)
+  assert.equal(missing.installed, false)
+
+  const foreign = Model.parseAppStatus(JSON.stringify({ ok: true, installed: true, foreign: true, managed: false }))
+  assert.equal(foreign.foreign, true)
+  assert.equal(foreign.managed, false)
+
+  const error = Model.parseAppStatus(JSON.stringify({ ok: false, kind: "install", message: "icon failed" }))
+  assert.equal(error.ok, false)
+  assert.equal(error.kind, "install")
+  assert.equal(error.message, "icon failed")
+
+  assert.equal(Model.parseAppStatus("").kind, "parse")
+  assert.equal(Model.parseAppStatus("not json").kind, "parse")
+  assert.equal(Model.parseAppStatus("{}").kind, "parse")
+})
+
 test("normalize fills missing fields with zero and accepts numeric strings", () => {
   const full = Model.normalize({
     canConsume: true,

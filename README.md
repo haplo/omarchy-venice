@@ -3,7 +3,7 @@
 A native [Omarchy](https://omarchy.org/) bar widget for your
 [Venice.ai](https://venice.ai/) credit balance. A thin ring in the bar shows
 how much of the current DIEM epoch is left; click it for the DIEM and USD
-balances, the token setup and quick links.
+balances, the token setup, the app launcher and quick links.
 
 <img src="preview.png" alt="The Venice Balance panel showing 90.50 of 100.00 DIEM and a $25.00 USD balance" width="420">
 
@@ -29,7 +29,13 @@ light, dark, mono or colourful — gets a widget that looks like it belongs.
   in argv.
 - **Honest states**: loading, no token, rejected token, keyring unavailable,
   offline with the last known balance, and per-request HTTP errors.
-- **Keyboard**: `r` refresh, `c` open Chat, `a` open API keys, `Esc` close.
+- **Venice.ai as an app**: after the first successful balance the plugin
+  installs (or updates) a `Venice.ai` launcher that opens
+  `https://venice.ai/chat` in its own browser app window. Runs once; disable
+  it with `autoInstallApp false`. Chat and `c` open the app window, focusing
+  the existing one when it is already running.
+- **Keyboard**: `r` refresh, `c` open Chat in the app window, `a` open API
+  keys in the browser, `Esc` close.
 - **One poller for all monitors**: the widget declares a `service`, so a
   multi-monitor bar does not make two API requests a minute.
 
@@ -77,12 +83,30 @@ omarchy bar set net.fidelramos.venice tokenStorage file
 The two backends are never silently mixed: storing a token in one clears the
 other, so a stale copy cannot keep answering after a switch.
 
+On the first successful balance the plugin also installs **Venice.ai as an
+app** via `omarchy-webapp-install`: a normal launcher in your app menu whose
+`Exec` is `omarchy-launch-webapp "https://venice.ai/chat"`. The icon is reused
+if it already exists, otherwise it is fetched from the site. If a launcher
+already exists and still points at `https://venice.ai/`, it is updated to
+`/chat` once (the old file is backed up in `~/.local/state/venice/`). The
+update is one-shot; removing the app later does not make the plugin re-add it.
+Turn the whole thing off with:
+
+```bash
+omarchy bar set net.fidelramos.venice autoInstallApp false
+```
+
+The APP section in the panel shows the current state and offers
+Install / Update / Open. To remove the app manually, use
+`omarchy webapp remove "Venice.ai"`.
+
 ## Settings
 
 ```bash
 omarchy bar set net.fidelramos.venice barLabel usd
 omarchy bar set net.fidelramos.venice refreshIntervalSec 120
 omarchy bar set net.fidelramos.venice warnAtPercent 15
+omarchy bar set net.fidelramos.venice autoInstallApp false
 ```
 
 | Key | Default | What it does |
@@ -91,6 +115,7 @@ omarchy bar set net.fidelramos.venice warnAtPercent 15
 | `barLabel` | `none` | `none` is the ring only. `auto` is the DIEM percentage when staking, otherwise USD. Also `percent`, `usd`, `diem`, `both`. |
 | `warnAtPercent` | `25` | At or below this percentage of the DIEM allocation the ring and progress bar switch to `urgent`. |
 | `tokenStorage` | `keyring` | `keyring` or `file`. See above. |
+| `autoInstallApp` | `true` | After the first successful balance, install or update the Venice.ai web app launcher once. Turn off to leave your app launcher untouched. |
 
 The bar button: **left** opens the panel, **right** refreshes, **middle**
 copies the balance summary to the clipboard.
@@ -103,6 +128,7 @@ Service.qml          one poller: timer, token lifecycle, last good snapshot
 VeniceRing.qml       Canvas ring gauge, theme colours only
 Model.js             pure parsing, formatting, tiers, labels, tooltips
 bin/venice-billing   token lookup + curl; prints one JSON object
+bin/venice-app       status/ensure/install for the Venice.ai web app launcher
 ```
 
 `bin/venice-billing balance` reads the token, calls
@@ -137,6 +163,14 @@ omarchy-shell net.fidelramos.venice toggle
   marks it with an urgent dot and `last known` in the tooltip. It retries on
   the normal interval.
 - **Nothing after an edit to `Service.qml`**: `omarchy restart shell`.
+- **App did not install**: the panel APP section shows the error and a Retry.
+  The installer fetches the favicon, so a network or icon failure leaves the
+  launcher untouched and the one-shot marker unwritten. The install also
+  refuses to overwrite a `Venice.ai` launcher that was not created by
+  `omarchy-webapp-install`; remove it first if you want the managed one.
+- **App menu still opens the old page**: the automatic update is one-shot. Use
+  **Update to Chat** in the panel, or
+  `omarchy webapp install "Venice.ai" "https://venice.ai/chat" ""`.
 
 ## Development
 
@@ -144,12 +178,18 @@ omarchy-shell net.fidelramos.venice toggle
 omarchy plugin validate .
 node --test tests/model.test.js
 ./tests/helper.test.sh
+./tests/app.test.sh
 ```
 
 `tests/helper.test.sh` stubs `curl` and `secret-tool`, so it needs no token and
 no network. It checks the JSON contract, the auth/HTTP/network mappings, that
 the token never appears in curl's argv, the keyring failure path, and the
 file permissions.
+
+`tests/app.test.sh` stubs `omarchy-webapp-install` and `update-desktop-database`
+in a temporary `$HOME`. It checks install, the `/` → `/chat` update, the
+one-shot marker, the foreign-launcher guard, icon reuse vs fetch, and failure
+handling.
 
 To test a working tree in place:
 

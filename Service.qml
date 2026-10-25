@@ -29,8 +29,24 @@ Item {
   property double lastUpdated: 0
   property double now: Date.now()
 
+  // App launcher state. "unknown" until checkApp() returns; statuses mirror
+  // the ones the panel renders: missing / installed / outdated / foreign.
+  property string appStatus: "unknown"
+  property string appUrl: ""
+  property string appError: ""
+  property bool appBusy: false
+  property bool appAutoChecked: false
+  property bool appCheckPending: false
+
   readonly property string pluginDirectory: Model.fileUrlPath(Qt.resolvedUrl("."))
   readonly property string helperPath: pluginDirectory + "/bin/venice-billing"
+  readonly property string appHelperPath: pluginDirectory + "/bin/venice-app"
+
+  // A widget with no shell.json overrides legitimately receives {}, so
+  // "settings arrived" is an explicit handshake from the panel rather than a
+  // property of the object.
+  property bool settingsReady: false
+  readonly property bool autoInstallApp: setting("autoInstallApp", true) === true
 
   readonly property int refreshIntervalSec: intSetting("refreshIntervalSec", 30, 15, 3600)
   readonly property int warnAtPercent: intSetting("warnAtPercent", 25, 5, 50)
@@ -64,6 +80,7 @@ Item {
   }
 
   onSettingsChanged: {
+    settingsReady = true
     // Switching backends must not keep serving state from the old one, and a
     // paused backend should get an immediate retry so the panel reflects the
     // new setting.
@@ -72,6 +89,7 @@ Item {
       backendPaused = false
       refresh(true)
     }
+    maybeAutoInstall()
   }
 
   // --------------------------------------------------------------- actions
@@ -122,6 +140,53 @@ Item {
     storeProc.running = true
   }
 
+  // ------------------------------------------------------------ app launcher
+
+  function checkApp() {
+    if (!active) return
+    if (appStatusProc.running) {
+      appCheckPending = true
+      return
+    }
+    appCheckPending = false
+    appStatusProc.command = ["/bin/sh", appHelperPath, "status"]
+    appStatusProc.running = true
+  }
+
+  function runApp(action) {
+    if (!active || appBusy || appActionProc.running) return
+    appBusy = true
+    appError = ""
+    appStatus = "installing"
+    appActionProc.command = ["/bin/sh", appHelperPath, action]
+    appActionProc.running = true
+  }
+
+  function ensureApp() { runApp("ensure") }
+  function installApp() { runApp("install") }
+
+  function openApp() {
+    // Chromium names the --app window class brave-venice.ai__chat-Default (or
+    // chromium-…-Default), which is unique enough to focus without matching
+    // ordinary browser tabs that merely mention Venice.ai.
+    Quickshell.execDetached([
+      "omarchy-launch-or-focus-webapp",
+      "venice.ai__chat",
+      "https://venice.ai/chat"
+    ])
+  }
+
+  // One-shot: only after a successful balance proves the plugin is really in
+  // use, and only once the panel's settings have arrived (autoInstallApp can
+  // be turned off). The helper's marker makes this survive restarts.
+  function maybeAutoInstall() {
+    // `hasData` is a binding over `snapshot`; inside applyResult it can still
+    // report the previous value, so look at the property that was just set.
+    if (!active || appAutoChecked || !settingsReady || snapshot === null || !autoInstallApp) return
+    appAutoChecked = true
+    runApp("ensure")
+  }
+
   // --------------------------------------------------------------- results
 
   function applyResult(text) {
@@ -161,6 +226,7 @@ Item {
     lastError = ""
     lastUpdated = Date.now()
     now = lastUpdated
+    maybeAutoInstall()
   }
 
   // --------------------------------------------------------------- plumbing
@@ -225,6 +291,53 @@ Item {
       root.refresh(true)
     }
   }
+
+  Process {
+    id: appStatusProc
+    running: false
+    command: []
+    stdout: StdioCollector { id: appStatusOut; waitForEnd: true }
+    stderr: StdioCollector { id: appStatusErr; waitForEnd: true }
+    onExited: function(exitCode) {
+      var parsed = Model.parseAppStatus(String(appStatusOut.text || "").trim())
+      if (!parsed.ok) {
+        root.appStatus = "error"
+        root.appError = parsed.message || String(appStatusErr.text || "Could not read the app status").trim()
+      } else {
+        root.appUrl = parsed.url
+        root.appError = ""
+        if (!parsed.installed) root.appStatus = "missing"
+        else if (parsed.foreign) root.appStatus = "foreign"
+        else if (parsed.chatUrl) root.appStatus = "installed"
+        else root.appStatus = "outdated"
+      }
+      if (root.appCheckPending) {
+        root.appCheckPending = false
+        root.checkApp()
+      }
+    }
+  }
+
+  Process {
+    id: appActionProc
+    running: false
+    command: []
+    stdout: StdioCollector { id: appActionOut; waitForEnd: true }
+    stderr: StdioCollector { id: appActionErr; waitForEnd: true }
+    onExited: function(exitCode) {
+      var parsed = Model.parseAction(String(appActionOut.text || "").trim())
+      root.appBusy = false
+      if (!parsed.ok) {
+        root.appStatus = "error"
+        root.appError = parsed.message || String(appActionErr.text || "Could not install the app").trim()
+        return
+      }
+      root.appError = ""
+      root.checkApp()
+    }
+  }
+
+  Component.onCompleted: checkApp()
 
   Timer {
     id: refreshTimer

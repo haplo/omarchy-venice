@@ -1,0 +1,218 @@
+#!/bin/sh
+# Manage the Venice.ai Omarchy web app launcher.
+#
+# Usage:
+#   venice-app status    # JSON snapshot of the launcher
+#   venice-app ensure    # one-shot auto-install/update (respects the marker)
+#   venice-app install   # manual install/update, ignoring the marker
+#
+# The launcher is a normal Omarchy web app:
+#   ~/.local/share/applications/Venice.ai.desktop
+#   Exec=omarchy-launch-webapp "https://venice.ai/chat"
+#
+# "ensure" is called once after the first successful balance. It updates an
+# existing Omarchy launcher that still points at the landing page, and refuses
+# to overwrite a launcher that was not created by omarchy-webapp-install.
+# A marker in the plugin state directory makes it a one-shot: removing the app
+# later does not make the plugin re-add it behind the user's back.
+#
+# Output is always one JSON object on stdout.
+
+set -u
+
+APP_NAME="${VENICE_APP_NAME:-Venice.ai}"
+APP_URL="${VENICE_APP_URL:-https://venice.ai/chat}"
+DESKTOP_DIR="$HOME/.local/share/applications"
+DESKTOP_FILE="$DESKTOP_DIR/$APP_NAME.desktop"
+ICON_DIR="$HOME/.local/share/icons/hicolor/256x256/apps"
+ICON_FILE="$ICON_DIR/venice-ai.png"
+STATE_DIR="${VENICE_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/venice}"
+MARKER="$STATE_DIR/app-install-done"
+BACKUP="$STATE_DIR/app-launcher-before-chat.desktop"
+INSTALL_TIMEOUT="${VENICE_APP_INSTALL_TIMEOUT:-45}"
+
+if ! command -v jq >/dev/null 2>&1; then
+  printf '%s\n' '{"ok":false,"kind":"parse","message":"jq is not installed"}'
+  exit 15
+fi
+
+json_error() {
+  jq -nc --arg kind "$1" --arg message "$2" '{ok:false,kind:$kind,message:$message}'
+}
+
+fail() {
+  json_error "$1" "$3"
+  exit "$2"
+}
+
+squeeze() {
+  printf '%s' "$1" | tr '\n' ' ' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
+}
+
+bool_str() {
+  if [ "$1" -eq 1 ]; then
+    printf true
+  else
+    printf false
+  fi
+}
+
+# The marker and the pre-update backup both live here. Create it before
+# touching either, otherwise a missing state directory silently loses the
+# backup on a first update.
+ensure_state_dir() {
+  mkdir -p "$STATE_DIR" 2>/dev/null || return 1
+  chmod 700 "$STATE_DIR" 2>/dev/null || true
+  return 0
+}
+
+# Reads the current launcher into EXEC_LINE / INSTALLED / MANAGED / CHAT.
+# INSTALLED is a file check; MANAGED means omarchy-launch-webapp is the Exec.
+read_launcher() {
+  EXEC_LINE=""
+  INSTALLED=0
+  MANAGED=0
+  CHAT=0
+  URL=""
+
+  if [ ! -f "$DESKTOP_FILE" ]; then
+    return 0
+  fi
+
+  INSTALLED=1
+  EXEC_LINE=$(sed -n 's/^Exec=//p' "$DESKTOP_FILE" 2>/dev/null | head -1)
+  case "$EXEC_LINE" in
+    *omarchy-launch-webapp*) MANAGED=1 ;;
+  esac
+  case "$EXEC_LINE" in
+    *venice.ai/chat*) CHAT=1 ;;
+  esac
+  URL=$(printf '%s' "$EXEC_LINE" | sed -n 's/.*\(https\?:\/\/[^"[:space:]]*\).*/\1/p')
+}
+
+status_json() {
+  read_launcher
+
+  FOREIGN=0
+  if [ "$INSTALLED" -eq 1 ] && [ "$MANAGED" -eq 0 ]; then
+    FOREIGN=1
+  fi
+
+  MARKER_PRESENT=0
+  [ -f "$MARKER" ] && MARKER_PRESENT=1
+
+  jq -nc \
+    --arg name "$APP_NAME" \
+    --arg target "$APP_URL" \
+    --arg url "$URL" \
+    --argjson installed "$(bool_str "$INSTALLED")" \
+    --argjson managed "$(bool_str "$MANAGED")" \
+    --argjson chatUrl "$(bool_str "$CHAT")" \
+    --argjson foreign "$(bool_str "$FOREIGN")" \
+    --argjson marker "$(bool_str "$MARKER_PRESENT")" \
+    '{ok:true,name:$name,target:$target,url:$url,installed:$installed,managed:$managed,chatUrl:$chatUrl,foreign:$foreign,marker:$marker}'
+}
+
+install_app() {
+  if ! command -v omarchy-webapp-install >/dev/null 2>&1; then
+    fail install 14 "omarchy-webapp-install is not available"
+  fi
+
+  read_launcher
+
+  if [ "$INSTALLED" -eq 1 ] && [ "$MANAGED" -eq 0 ]; then
+    fail foreign 14 "A Venice.ai launcher already exists but is not managed by Omarchy; leaving it alone."
+  fi
+
+  mkdir -p "$DESKTOP_DIR" "$ICON_DIR" \
+    || fail install 14 "Could not create the launcher directories"
+  ensure_state_dir || fail install 14 "Could not create $STATE_DIR"
+
+  ACTION="installed"
+  if [ "$INSTALLED" -eq 1 ]; then
+    ACTION="updated"
+    # Keep the first pre-chat launcher around so the update is reversible.
+    if [ ! -f "$BACKUP" ]; then
+      cp "$DESKTOP_FILE" "$BACKUP" 2>/dev/null || true
+    fi
+  fi
+
+  # Reuse the existing Venice icon when there is one; otherwise let
+  # omarchy-webapp-install fetch the site icon.
+  ICON_REF=""
+  [ -s "$ICON_FILE" ] && ICON_REF="venice-ai"
+
+  errf=$(mktemp) || fail install 14 "Could not create a temporary file"
+  trap 'rm -f "$errf"' EXIT INT TERM
+
+  installer_out=$(timeout "$INSTALL_TIMEOUT" omarchy-webapp-install "$APP_NAME" "$APP_URL" "$ICON_REF" 2>"$errf")
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    msg=$(squeeze "$(cat "$errf" 2>/dev/null)")
+    [ -n "$msg" ] || msg=$(squeeze "$installer_out")
+    [ -n "$msg" ] || msg="The web app installer failed"
+    fail install 14 "$msg"
+  fi
+
+  if [ ! -f "$DESKTOP_FILE" ] || ! grep -q 'venice.ai/chat' "$DESKTOP_FILE" 2>/dev/null; then
+    fail install 14 "The web app installer did not create the expected launcher"
+  fi
+
+  if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database "$DESKTOP_DIR" >/dev/null 2>&1 || true
+  fi
+
+  # Best effort: the install itself already succeeded.
+  : > "$MARKER" 2>/dev/null || true
+
+  if [ "$ACTION" = "updated" ]; then
+    message="Venice.ai now opens Chat in its app window"
+  else
+    message="Venice.ai added to the app launcher"
+  fi
+
+  jq -nc --arg action "$ACTION" --arg url "$APP_URL" --arg message "$message" \
+    '{ok:true,action:$action,url:$url,message:$message}'
+  exit 0
+}
+
+ensure_app() {
+  if [ -f "$MARKER" ]; then
+    jq -nc '{ok:true,action:"skipped",message:"Already checked"}'
+    exit 0
+  fi
+
+  read_launcher
+
+  if [ "$INSTALLED" -eq 1 ] && [ "$MANAGED" -eq 0 ]; then
+    ensure_state_dir || true
+    : > "$MARKER" 2>/dev/null || true
+    jq -nc '{ok:true,action:"skipped",message:"Another Venice.ai launcher exists; left alone"}'
+    exit 0
+  fi
+
+  if [ "$INSTALLED" -eq 1 ] && [ "$CHAT" -eq 1 ]; then
+    ensure_state_dir || true
+    : > "$MARKER" 2>/dev/null || true
+    jq -nc '{ok:true,action:"skipped",message:"Already installed"}'
+    exit 0
+  fi
+
+  install_app
+}
+
+cmd="${1:-}"
+if [ "$#" -gt 0 ]; then
+  shift
+fi
+
+case "$cmd" in
+  status) status_json ;;
+  ensure) ensure_app ;;
+  install) install_app ;;
+  ""|-h|--help)
+    printf '%s\n' "usage: venice-app status|ensure|install" >&2
+    exit 64
+    ;;
+  *) fail parse 64 "Unknown command: $cmd" ;;
+esac
