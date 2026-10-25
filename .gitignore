@@ -1,0 +1,11 @@
+*.log
+*.swp
+*.swo
+.DS_Store
+node_modules/
+.env
+token
+
+# Global gitignore on some machines ignores bin/; this plugin needs it.
+!bin/
+!bin/venice-billing

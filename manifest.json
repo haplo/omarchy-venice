@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "id": "net.fidelramos.venice",
+  "name": "Venice Balance",
+  "version": "0.1.0",
+  "author": "Fidel Ramos",
+  "license": "MIT",
+  "description": "Venice.ai credit balance — DIEM and USD — in the Omarchy bar, with a token setup panel.",
+  "kinds": [
+    "service",
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Venice Balance",
+    "description": "Remaining DIEM and USD at a glance. The ring shows the current DIEM epoch allocation; click for both balances, token setup and quick links.",
+    "category": "AI",
+    "aliases": [
+      "venice",
+      "diem",
+      "balance",
+      "credits"
+    ],
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "refreshIntervalSec": 60,
+      "barLabel": "none",
+      "warnAtPercent": 25,
+      "tokenStorage": "keyring"
+    },
+    "schema": [
+      {
+        "key": "refreshIntervalSec",
+        "type": "integer",
+        "label": "Refresh interval (seconds)",
+        "min": 15,
+        "max": 3600,
+        "step": 15,
+        "defaultValue": 60,
+        "description": "How often the balance is re-read. Requests are paused automatically after an authentication failure."
+      },
+      {
+        "key": "barLabel",
+        "type": "enum",
+        "label": "Bar label",
+        "options": [
+          "none",
+          "auto",
+          "percent",
+          "usd",
+          "diem",
+          "both"
+        ],
+        "defaultValue": "none",
+        "description": "none: the ring only. auto: percent of the DIEM epoch left, or USD when not staking. percent: the same, always. usd, diem: one amount. both: DIEM and USD. Always hidden on a vertical bar."
+      },
+      {
+        "key": "warnAtPercent",
+        "type": "integer",
+        "label": "Low-balance threshold (% DIEM left)",
+        "min": 5,
+        "max": 50,
+        "step": 5,
+        "defaultValue": 25,
+        "description": "At or below this percentage of the current DIEM allocation the ring turns urgent."
+      },
+      {
+        "key": "tokenStorage",
+        "type": "enum",
+        "label": "Token storage",
+        "options": [
+          "keyring",
+          "file"
+        ],
+        "defaultValue": "keyring",
+        "description": "keyring: the system Secret Service (gnome-keyring), no plaintext on disk. file: a 0600 file in ~/.local/state/venice, for hosts where the keyring is locked or unavailable."
+      }
+    ]
+  }
+}

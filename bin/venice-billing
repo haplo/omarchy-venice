@@ -1,0 +1,298 @@
+#!/bin/sh
+# Venice.ai balance helper for the Omarchy Venice Balance plugin.
+#
+# The API token is read here and nowhere else. It is never printed, never put
+# in argv, and never passed through the environment of a long-lived process.
+#
+# Usage:
+#   venice-billing balance [--storage=keyring|file]
+#   venice-billing store-token [--storage=keyring|file]   (token on stdin)
+#   venice-billing clear-token
+#
+# Output is always one JSON object on stdout:
+#   {"ok":true,"storage":"keyring","data":{...}}
+#   {"ok":false,"kind":"no-token|auth|network|http|keyring|file|parse","message":"..."}
+#
+# Exit codes mirror the kind: 0 ok, 10 no-token, 11 auth, 12 network,
+# 13 http, 14 keyring/file, 15 parse.
+#
+# Nothing here needs bash. secret-tool and curl failures are reported rather
+# than retried silently, and a locked keyring is never downgraded to a
+# plaintext file behind the user's back.
+
+set -u
+
+API_URL="${VENICE_API_URL:-https://api.venice.ai/api/v1/billing/balance}"
+STATE_DIR="${VENICE_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/venice}"
+TOKEN_FILE="$STATE_DIR/token"
+KEYRING_SERVICE="net.fidelramos.venice"
+KEYRING_ACCOUNT="api-token"
+KEYRING_LABEL="Venice.ai API token (Omarchy)"
+KEYRING_TIMEOUT="${VENICE_KEYRING_TIMEOUT:-5}"
+KEYRING_STORE_TIMEOUT="${VENICE_KEYRING_STORE_TIMEOUT:-10}"
+
+TOKEN=""
+READ_RC=1
+READ_ERROR_KIND=""
+READ_ERROR_MSG=""
+
+if ! command -v jq >/dev/null 2>&1; then
+  printf '%s\n' '{"ok":false,"kind":"parse","message":"jq is not installed"}'
+  exit 15
+fi
+
+json_error() {
+  jq -nc --arg kind "$1" --arg message "$2" '{ok:false,kind:$kind,message:$message}'
+}
+
+fail() {
+  json_error "$1" "$3"
+  exit "$2"
+}
+
+squeeze() {
+  printf '%s' "$1" | tr '\n' ' ' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
+}
+
+trim() {
+  printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
+}
+
+# Tokens are JWT-ish: letters, digits, dot, underscore, dash, plus, slash and
+# padding. Anything else (quotes, spaces, backslashes, newlines) is rejected so
+# it can never break out of the curl config line that carries it.
+validate_token() {
+  [ -n "$1" ] || return 1
+  case "$1" in
+    *[!A-Za-z0-9._~+/=-]*) return 1 ;;
+  esac
+  return 0
+}
+
+# Loads the token into $TOKEN and sets $READ_RC:
+#   0 = loaded, 1 = not configured, 2 = backend error ($READ_ERROR_*).
+load_token() {
+  storage=$1
+  TOKEN=""
+  READ_RC=1
+  READ_ERROR_KIND=""
+  READ_ERROR_MSG=""
+
+  if [ "$storage" = "file" ]; then
+    if [ ! -f "$TOKEN_FILE" ]; then
+      return 0
+    fi
+    TOKEN=$(cat "$TOKEN_FILE" 2>/dev/null)
+    rc=$?
+    if [ "$rc" -ne 0 ]; then
+      READ_RC=2
+      READ_ERROR_KIND="file"
+      READ_ERROR_MSG="Could not read $TOKEN_FILE"
+      return 0
+    fi
+    [ -n "$TOKEN" ] || return 0
+    READ_RC=0
+    return 0
+  fi
+
+  if ! command -v secret-tool >/dev/null 2>&1; then
+    READ_RC=2
+    READ_ERROR_KIND="keyring"
+    READ_ERROR_MSG="secret-tool (libsecret) is not installed"
+    return 0
+  fi
+
+  errf=$(mktemp) || {
+    READ_RC=2
+    READ_ERROR_KIND="parse"
+    READ_ERROR_MSG="Could not create a temporary file"
+    return 0
+  }
+  TOKEN=$(timeout "$KEYRING_TIMEOUT" secret-tool lookup \
+    service "$KEYRING_SERVICE" account "$KEYRING_ACCOUNT" 2>"$errf")
+  rc=$?
+  errmsg=$(squeeze "$(cat "$errf" 2>/dev/null)")
+  rm -f "$errf"
+
+  if [ "$rc" -eq 124 ]; then
+    READ_RC=2
+    READ_ERROR_KIND="keyring"
+    READ_ERROR_MSG="The keyring did not respond (it may be locked)"
+    return 0
+  fi
+  if [ "$rc" -ne 0 ]; then
+    if [ -n "$errmsg" ]; then
+      READ_RC=2
+      READ_ERROR_KIND="keyring"
+      READ_ERROR_MSG="Keyring error: $errmsg"
+      return 0
+    fi
+    return 0
+  fi
+  [ -n "$TOKEN" ] || return 0
+  READ_RC=0
+}
+
+# Sets $STORAGE. Deliberately not a command substitution: `fail` has to be
+# able to exit the script, not print JSON into a captured variable.
+STORAGE=""
+parse_storage_args() {
+  STORAGE="keyring"
+  for arg in "$@"; do
+    case "$arg" in
+      --storage=*) STORAGE=${arg#--storage=} ;;
+      *) fail parse 15 "Unknown argument: $arg" ;;
+    esac
+  done
+  case "$STORAGE" in
+    keyring|file) ;;
+    *) fail parse 15 "Unknown storage backend: $STORAGE" ;;
+  esac
+}
+
+balance() {
+  parse_storage_args "$@"
+  storage="$STORAGE"
+  load_token "$storage"
+
+  if [ "$READ_RC" -eq 2 ]; then
+    fail "$READ_ERROR_KIND" 14 "$READ_ERROR_MSG"
+  fi
+  if [ "$READ_RC" -ne 0 ] || [ -z "$TOKEN" ]; then
+    fail no-token 10 "No API token set"
+  fi
+  validate_token "$TOKEN" || fail parse 15 "The stored token contains invalid characters"
+
+  body=$(mktemp) || fail parse 15 "Could not create a temporary file"
+  errf=$(mktemp) || {
+    rm -f "$body"
+    fail parse 15 "Could not create a temporary file"
+  }
+  trap 'rm -f "$body" "$errf"' EXIT INT TERM
+
+  http=$(printf 'header = "Authorization: Bearer %s"\nheader = "Accept: application/json"\nheader = "User-Agent: omarchy-venice/0.1"\n' "$TOKEN" \
+    | curl -sS --connect-timeout 5 --max-time 12 \
+        -o "$body" -w '%{http_code}' "$API_URL" 2>"$errf")
+  curl_rc=$?
+
+  if [ "$curl_rc" -ne 0 ]; then
+    # Translate the handful of curl failures a user can act on; anything else
+    # keeps curl's own wording so a bug report is still useful.
+    case "$curl_rc" in
+      6) msg="Can't resolve the Venice.ai API — check your connection" ;;
+      7) msg="Can't connect to Venice.ai — check your connection" ;;
+      28) msg="Venice.ai did not respond in time" ;;
+      35|60) msg="TLS error talking to Venice.ai" ;;
+      *)
+        msg=$(squeeze "$(cat "$errf" 2>/dev/null)")
+        [ -n "$msg" ] || msg="Network error (curl exit $curl_rc)"
+        ;;
+    esac
+    fail network 12 "$msg"
+  fi
+
+  case "$http" in
+    200)
+      if ! jq -e . "$body" >/dev/null 2>&1; then
+        fail parse 15 "The balance response was not valid JSON"
+      fi
+      jq -c --arg storage "$storage" '{ok:true,storage:$storage,data:.}' "$body" \
+        || fail parse 15 "Could not read the balance response"
+      exit 0
+      ;;
+    # Venice answers an invalid Bearer key with 402 (the x402 challenge), not
+    # just 401/403. All three mean "the token needs replacing" to the widget.
+    401|402|403)
+      msg=$(jq -r '.error // empty' "$body" 2>/dev/null)
+      [ -n "$msg" ] || msg="Authentication failed (HTTP $http)"
+      fail auth 11 "$msg"
+      ;;
+    *)
+      msg=$(jq -r '.error // empty' "$body" 2>/dev/null)
+      [ -n "$msg" ] || msg="Request failed (HTTP $http)"
+      fail http 13 "$msg"
+      ;;
+  esac
+}
+
+store_token() {
+  parse_storage_args "$@"
+  storage="$STORAGE"
+
+  token=""
+  IFS= read -r token || true
+  token=$(printf '%s' "$token" | tr -d '\r')
+  token=$(trim "$token")
+  [ -n "$token" ] || fail parse 15 "No token was received"
+  validate_token "$token" || fail parse 15 "That does not look like an API token"
+
+  case "$storage" in
+    keyring)
+      if ! command -v secret-tool >/dev/null 2>&1; then
+        fail keyring 14 "secret-tool (libsecret) is not installed"
+      fi
+      errf=$(mktemp) || fail parse 15 "Could not create a temporary file"
+      trap 'rm -f "$errf"' EXIT INT TERM
+      printf '%s' "$token" | timeout "$KEYRING_STORE_TIMEOUT" secret-tool store \
+        --label="$KEYRING_LABEL" service "$KEYRING_SERVICE" account "$KEYRING_ACCOUNT" 2>"$errf"
+      rc=$?
+      if [ "$rc" -ne 0 ]; then
+        msg=$(squeeze "$(cat "$errf" 2>/dev/null)")
+        [ "$rc" -eq 124 ] && msg="The keyring did not respond (it may be locked)"
+        [ -n "$msg" ] || msg="The keyring rejected the token"
+        fail keyring 14 "$msg"
+      fi
+      rm -f "$TOKEN_FILE"
+      jq -nc '{ok:true,storage:"keyring"}'
+      exit 0
+      ;;
+    file)
+      umask 077
+      mkdir -p "$STATE_DIR" || fail file 14 "Could not create $STATE_DIR"
+      chmod 700 "$STATE_DIR" 2>/dev/null || true
+      tmp="$TOKEN_FILE.tmp.$$"
+      printf '%s\n' "$token" > "$tmp" || {
+        rm -f "$tmp"
+        fail file 14 "Could not write the token file"
+      }
+      chmod 600 "$tmp" 2>/dev/null || true
+      mv -f "$tmp" "$TOKEN_FILE" || {
+        rm -f "$tmp"
+        fail file 14 "Could not save the token file"
+      }
+      # Do not leave a stale copy in the other backend.
+      if command -v secret-tool >/dev/null 2>&1; then
+        timeout "$KEYRING_TIMEOUT" secret-tool clear \
+          service "$KEYRING_SERVICE" account "$KEYRING_ACCOUNT" >/dev/null 2>&1 || true
+      fi
+      jq -nc '{ok:true,storage:"file"}'
+      exit 0
+      ;;
+  esac
+}
+
+clear_token() {
+  rm -f "$TOKEN_FILE"
+  if command -v secret-tool >/dev/null 2>&1; then
+    timeout "$KEYRING_TIMEOUT" secret-tool clear \
+      service "$KEYRING_SERVICE" account "$KEYRING_ACCOUNT" >/dev/null 2>&1 || true
+  fi
+  jq -nc '{ok:true}'
+  exit 0
+}
+
+cmd="${1:-}"
+if [ "$#" -gt 0 ]; then
+  shift
+fi
+
+case "$cmd" in
+  balance) balance "$@" ;;
+  store-token) store_token "$@" ;;
+  clear-token) clear_token "$@" ;;
+  ""|-h|--help)
+    printf '%s\n' "usage: venice-billing balance|store-token|clear-token [--storage=keyring|file]" >&2
+    exit 64
+    ;;
+  *) fail parse 64 "Unknown command: $cmd" ;;
+esac
