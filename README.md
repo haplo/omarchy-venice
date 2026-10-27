@@ -42,18 +42,8 @@ light, dark, mono or colourful — gets a widget that looks like it belongs.
 
 ## Install
 
-Once the repository is published:
-
 ```bash
 omarchy plugin add https://github.com/haplo/omarchy-venice.git --enable
-```
-
-Or install a local checkout by hand:
-
-```bash
-git clone <url> ~/.config/omarchy/plugins/net.fidelramos.venice
-omarchy-shell shell rescanPlugins
-omarchy plugin enable net.fidelramos.venice --section right
 ```
 
 The widget lands in the right section of the bar. Saving files under
@@ -64,7 +54,7 @@ loads the new code.
 
 ## First run
 
-Click the ring and paste an API token from
+Click the ring and paste an admin API token from
 [venice.ai/settings/api](https://venice.ai/settings/api). Press Enter or choose
 **Save token**.
 
@@ -84,14 +74,10 @@ omarchy bar set net.fidelramos.venice tokenStorage file
 The two backends are never silently mixed: storing a token in one clears the
 other, so a stale copy cannot keep answering after a switch.
 
-On the first successful balance the plugin also installs **Venice.ai as an
-app** via `omarchy-webapp-install`: a normal launcher in your app menu whose
-`Exec` is `omarchy-launch-webapp "https://venice.ai/chat"`. The icon is reused
-if it already exists, otherwise it is fetched from the site. If a launcher
-already exists and still points at `https://venice.ai/`, it is updated to
-`/chat` once (the old file is backed up in `~/.local/state/venice/`). The
-update is one-shot; removing the app later does not make the plugin re-add it.
-Turn the whole thing off with:
+On the first successful balance the plugin also installs **Venice.ai as an app** via
+`omarchy-webapp-install`: a normal launcher in your app menu whose `Exec` is
+`omarchy-launch-webapp "https://venice.ai/chat"`. The icon is reused if it already
+exists, otherwise it is fetched from the site. Turn the autoinstall of the app off with:
 
 ```bash
 omarchy bar set net.fidelramos.venice autoInstallApp false
@@ -206,3 +192,7 @@ omarchy restart shell
 
 This plugin is not affiliated with, endorsed by, or developed by Venice.ai.
 All trademarks and brand names belong to their respective owners.
+
+## License
+
+[MIT](LICENSE).
