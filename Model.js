@@ -200,6 +200,15 @@ function updatedLabel(timestamp, now) {
   return Math.floor(hours / 24) + "d ago"
 }
 
+// DIEM stake resets at 00:00 UTC. Hours and minutes until then, for the epoch
+// line. `now` is injected so the tests are deterministic.
+function resetIn(now) {
+  var current = number(now) || Date.now()
+  var next = (Math.floor(current / 86400000) + 1) * 86400000
+  var minutes = Math.max(0, Math.ceil((next - current) / 60000))
+  return Math.floor(minutes / 60) + "h " + (minutes % 60) + "m"
+}
+
 function summary(balance) {
   if (!balance) return ""
   if (balance.allocation > 0) {
@@ -290,6 +299,7 @@ if (typeof module !== "undefined" && module.exports) {
     formatDiem: formatDiem,
     formatPercent: formatPercent,
     updatedLabel: updatedLabel,
+    resetIn: resetIn,
     summary: summary,
     extraCredits: extraCredits,
     barLabel: barLabel,

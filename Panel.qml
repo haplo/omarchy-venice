@@ -635,7 +635,9 @@ Panel {
             Text {
               width: parent.width
               text: root.bal && root.bal.allocation > 0
-                ? Model.formatPercent(root.venice ? root.venice.diemPct : 0) + " remaining this epoch"
+                ? Model.formatPercent(root.venice ? root.venice.diemPct : 0)
+                  + " remaining this epoch (resets in "
+                  + Model.resetIn(root.venice ? root.venice.now : Date.now()) + ")"
                 : "No DIEM allocation — spending from USD"
               color: root.dim
               font.family: root.fontFamily

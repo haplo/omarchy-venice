@@ -183,6 +183,21 @@ test("updatedLabel reads naturally at every scale", () => {
   assert.equal(Model.updatedLabel(now - 2 * 86400_000, now), "2d ago")
 })
 
+test("resetIn counts down to the next 00:00 UTC", () => {
+  const at = (hhmmss) => {
+    const [h, m, s] = hhmmss.split(":").map(Number)
+    return Date.UTC(2026, 9, 28, h, m, s)
+  }
+  assert.equal(Model.resetIn(at("00:00:00")), "24h 0m")
+  assert.equal(Model.resetIn(at("19:48:00")), "4h 12m")
+  assert.equal(Model.resetIn(at("23:59:30")), "0h 1m")
+  assert.equal(Model.resetIn(at("12:00:00")), "12h 0m")
+  assert.equal(Model.resetIn(at("00:00:01")), "24h 0m")
+  // A missing or zero clock falls back to the real one without throwing.
+  assert.match(Model.resetIn(0), /^\d+h \d+m$/)
+  assert.match(Model.resetIn(null), /^\d+h \d+m$/)
+})
+
 test("summary covers staking and USD-only accounts", () => {
   assert.equal(Model.summary(null), "")
   assert.equal(Model.summary(balance({ diem: 90.5, allocation: 100, usd: 25 })),

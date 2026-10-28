@@ -17,8 +17,8 @@ light, dark, mono or colourful — gets a widget that looks like it belongs.
   The centre dot is filled when Venice will spend, hollow when it will not.
   When there is no DIEM allocation, a full ring means USD credit is available.
 - **Both balances** in the panel: DIEM remaining versus the epoch allocation,
-  with a progress bar, and the prepaid USD balance (negative USD is shown as
-  owed).
+  with a progress bar and a countdown to the next reset (00:00 UTC), and the
+  prepaid USD balance (negative USD is shown as owed).
 - **Theme-aware status**: `accent` when healthy, `urgent` below the low-balance
   threshold or when depleted. No hardcoded green/amber/red.
 - **Optional bar label**: `none` (default, icon only), `auto`, `percent`, `usd`,
