@@ -188,6 +188,9 @@ rsync -a --delete --exclude .git ~/Code/omarchy-venice/ \
 omarchy restart shell
 ```
 
+Release notes live in [CHANGELOG.md](CHANGELOG.md); the release process is
+documented in [RELEASING.md](RELEASING.md).
+
 ## Disclaimer
 
 This plugin is not affiliated with, endorsed by, or developed by Venice.ai.
