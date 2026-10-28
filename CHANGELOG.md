@@ -35,10 +35,10 @@ Initial public release.
 - Clear states for loading, a missing token, a rejected token, an unavailable
   keyring, an unreadable token file, offline with the last known balance, HTTP
   errors, and malformed responses, with a Retry action.
-- After the first successful balance, an optional one-shot install of a
-  `Venice.ai` web app launcher that opens `https://venice.ai/chat`, with an APP
-  section for Install, Update to Chat and Open. A launcher the plugin did not
-  create is left alone.
+- An APP section with Chat and API keys, plus an Install app button that appears
+  only when no `Venice.ai` web app launcher exists. It creates a launcher that
+  opens `https://venice.ai/chat` in its own app window. Existing launchers are
+  never modified.
 - Chat opens in the app window; API keys open in their own app window. Both
   dismiss the panel before handing off.
 - Keyboard shortcuts: `r` refresh, `c` chat, `a` API keys, `Esc` close.
@@ -47,7 +47,7 @@ Initial public release.
 - One shared poller for every monitor, a configurable refresh interval
   (15–3600 seconds, default 30), and automatic pausing after a rejected token.
 - Settings through the Omarchy bar: `refreshIntervalSec`, `barLabel`,
-  `warnAtPercent`, `tokenStorage`, and `autoInstallApp`.
+  `warnAtPercent`, and `tokenStorage`.
 - IPC commands: `open`, `close`, `show`, `hide`, `toggle`, `refresh`, `chat`,
   `api`, and `status`.
 
@@ -57,8 +57,8 @@ Initial public release.
   in argv. It is validated against a restricted character set. File storage
   uses `0700`/`0600` permissions, and switching storage clears the other copy.
 - No telemetry or analytics. Balance requests go only to `api.venice.ai`, with
-  connect and total timeouts. The optional app install may fetch the site icon
-  through `omarchy-webapp-install`.
+  connect and total timeouts. The user-requested app install may fetch the site
+  icon through `omarchy-webapp-install`.
 
 [Unreleased]: https://github.com/haplo/omarchy-venice/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/haplo/omarchy-venice/releases/tag/v0.1.0

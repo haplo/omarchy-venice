@@ -10,17 +10,15 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT INT TERM
 
 home="$tmp/home"
-state="$tmp/state"
 stub="$tmp/stub"
 
 export HOME="$home"
-export VENICE_STATE_DIR="$state"
 export PATH="$stub:$PATH"
 export STUB_LOG="$tmp/install.log"
 
 mkdir -p "$home/.local/share/applications" \
          "$home/.local/share/icons/hicolor/256x256/apps" \
-         "$state" "$stub"
+         "$stub"
 
 cat > "$stub/omarchy-webapp-install" <<'INSTALL'
 #!/bin/sh
@@ -66,13 +64,9 @@ capture() {
 
 desktop="$home/.local/share/applications/Venice.ai.desktop"
 icon="$home/.local/share/icons/hicolor/256x256/apps/venice-ai.png"
-marker="$state/app-install-done"
-backup="$state/app-launcher-before-chat.desktop"
 
 reset_all() {
-  # Deliberately leave the state directory absent: creating the pre-update
-  # backup before the directory exists was a real bug.
-  rm -rf "$home/.local/share/applications" "$home/.local/share/icons" "$state"
+  rm -rf "$home/.local/share/applications" "$home/.local/share/icons"
   mkdir -p "$home/.local/share/applications" \
            "$home/.local/share/icons/hicolor/256x256/apps"
   rm -f "$tmp/install.log"
@@ -86,18 +80,24 @@ capture "$helper" status
 check_equal "$CAPTURE_RC" "0"
 check_json "$CAPTURE_OUT" '.ok == true and .installed == false and .managed == false and .chatUrl == false and .foreign == false'
 
-capture "$helper" ensure
+capture "$helper" install
 check_equal "$CAPTURE_RC" "0"
 check_json "$CAPTURE_OUT" '.ok == true and .action == "installed"'
-[ -f "$desktop" ] || fail "ensure did not create the launcher"
+[ -f "$desktop" ] || fail "install did not create the launcher"
 grep -q 'https://venice.ai/chat' "$desktop" || fail "launcher does not point at Chat"
-[ -f "$marker" ] || fail "ensure did not write the one-shot marker"
 check_equal "$(tail -1 "$tmp/install.log")" "Venice.ai|https://venice.ai/chat|"
 
-# ------------------------------------------------- update an existing launcher
+# --------------------------------------------------------- icon reuse
 
 reset_all
 printf 'icon' > "$icon"
+capture "$helper" install
+check_equal "$CAPTURE_RC" "0"
+check_equal "$(tail -1 "$tmp/install.log")" "Venice.ai|https://venice.ai/chat|venice-ai"
+
+# -------------------------------------- existing managed launcher, landing page
+
+reset_all
 cat > "$desktop" <<'EOF'
 [Desktop Entry]
 Version=1.0
@@ -113,14 +113,13 @@ EOF
 capture "$helper" status
 check_json "$CAPTURE_OUT" '.installed == true and .managed == true and .chatUrl == false and .foreign == false and .url == "https://venice.ai/"'
 
-capture "$helper" ensure
-check_json "$CAPTURE_OUT" '.action == "updated"'
-grep -q 'https://venice.ai/chat' "$desktop" || fail "existing launcher was not updated to Chat"
-[ -f "$backup" ] || fail "the old launcher was not backed up"
-[ -f "$marker" ] || fail "update did not write the one-shot marker"
-check_equal "$(tail -1 "$tmp/install.log")" "Venice.ai|https://venice.ai/chat|venice-ai"
+capture "$helper" install
+check_equal "$CAPTURE_RC" "14"
+check_json "$CAPTURE_OUT" '.ok == false and .kind == "exists"'
+grep -q 'https://venice.ai/"' "$desktop" || fail "existing launcher was modified"
+[ ! -s "$tmp/install.log" ] || fail "install called the installer for an existing launcher"
 
-# ------------------------------------------------------- already on Chat
+# ---------------------------------------------------- existing launcher on Chat
 
 reset_all
 cat > "$desktop" <<'EOF'
@@ -131,20 +130,14 @@ Type=Application
 Icon=venice-ai
 EOF
 
-capture "$helper" ensure
-check_json "$CAPTURE_OUT" '.action == "skipped"'
-[ -f "$marker" ] || fail "already-installed ensure did not write the marker"
-[ ! -s "$tmp/install.log" ] || fail "ensure called the installer for an up-to-date launcher"
+capture "$helper" status
+check_json "$CAPTURE_OUT" '.installed == true and .managed == true and .chatUrl == true and .foreign == false and .url == "https://venice.ai/chat"'
 
-# ---------------------------------------------- marker wins over a removal
-
-reset_all
-mkdir -p "$state"
-: > "$marker"
-capture "$helper" ensure
-check_json "$CAPTURE_OUT" '.action == "skipped"'
-[ ! -f "$desktop" ] || fail "ensure reinstalled after the one-shot marker"
-[ ! -s "$tmp/install.log" ] || fail "ensure called the installer after the marker"
+capture "$helper" install
+check_equal "$CAPTURE_RC" "14"
+check_json "$CAPTURE_OUT" '.ok == false and .kind == "exists"'
+grep -q 'https://venice.ai/chat' "$desktop" || fail "existing Chat launcher was modified"
+[ ! -s "$tmp/install.log" ] || fail "install called the installer for an existing launcher"
 
 # ------------------------------------------------------- foreign launcher
 
@@ -159,51 +152,29 @@ EOF
 capture "$helper" status
 check_json "$CAPTURE_OUT" '.installed == true and .managed == false and .foreign == true'
 
-capture "$helper" ensure
-check_json "$CAPTURE_OUT" '.action == "skipped" and (.message | test("Another"))'
-grep -q 'venice-native' "$desktop" || fail "foreign launcher was overwritten"
-[ -f "$marker" ] || fail "foreign ensure did not write the checked marker"
-
-rm -f "$marker"
 capture "$helper" install
 check_equal "$CAPTURE_RC" "14"
-check_json "$CAPTURE_OUT" '.ok == false and .kind == "foreign"'
-grep -q 'venice-native' "$desktop" || fail "manual install overwrote a foreign launcher"
+check_json "$CAPTURE_OUT" '.ok == false and .kind == "exists"'
+grep -q 'venice-native' "$desktop" || fail "foreign launcher was overwritten"
+[ ! -s "$tmp/install.log" ] || fail "install called the installer for a foreign launcher"
 
 # ---------------------------------------------------------- install failure
 
 reset_all
 export STUB_FAIL="Error: Failed to download icon."
-capture "$helper" ensure
+capture "$helper" install
 check_equal "$CAPTURE_RC" "14"
 check_json "$CAPTURE_OUT" '.ok == false and .kind == "install" and (.message | test("Failed to download"))'
-[ ! -f "$marker" ] || fail "a failed install wrote the marker"
 [ ! -f "$desktop" ] || fail "a failed install created a launcher"
 unset STUB_FAIL
 
-# ------------------------------------------------ manual install ignores marker
+# --------------------------------------------------------- ensure is gone
 
 reset_all
-mkdir -p "$state"
-: > "$marker"
-capture "$helper" install
-check_equal "$CAPTURE_RC" "0"
-check_json "$CAPTURE_OUT" '.ok == true and .action == "installed"'
-[ -f "$desktop" ] || fail "manual install did not create the launcher"
-[ -s "$tmp/install.log" ] || fail "manual install did not call the installer"
-
-# ------------------------------------------------------------- status on Chat
-
-reset_all
-cat > "$desktop" <<'EOF'
-[Desktop Entry]
-Name=Venice.ai
-Exec=omarchy-launch-webapp "https://venice.ai/chat"
-Type=Application
-Icon=venice-ai
-EOF
-capture "$helper" status
-check_json "$CAPTURE_OUT" '.installed == true and .managed == true and .chatUrl == true and .foreign == false and .url == "https://venice.ai/chat"'
+capture "$helper" ensure
+check_equal "$CAPTURE_RC" "64"
+check_json "$CAPTURE_OUT" '.ok == false and .kind == "parse"'
+[ ! -f "$desktop" ] || fail "the removed ensure command still created a launcher"
 
 if [ "$failures" -ne 0 ]; then
   printf '%s app test(s) failed\n' "$failures" >&2

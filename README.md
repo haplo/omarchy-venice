@@ -29,14 +29,16 @@ light, dark, mono or colourful — gets a widget that looks like it belongs.
   in argv.
 - **Honest states**: loading, no token, rejected token, keyring unavailable,
   offline with the last known balance, and per-request HTTP errors.
-- **Venice.ai as an app**: after the first successful balance the plugin
-  installs (or updates) a `Venice.ai` launcher that opens
-  `https://venice.ai/chat` in its own browser app window. Runs once; disable
-  it with `autoInstallApp false`. Chat and `c` open the app window, focusing
-  the existing one when it is already running.
+- **Venice.ai as an app**: the APP section has Chat and API keys, plus an
+  **Install app** button when no `Venice.ai` launcher exists. It creates a
+  launcher that opens `https://venice.ai/chat` in its own browser app window.
+  An existing launcher is never modified; remove it with
+  `omarchy webapp remove "Venice.ai"` if you want the plugin's own. Chat and
+  `c` open the app window, focusing the existing one when it is already
+  running.
 - **Keyboard**: `r` refresh, `c` open Chat in the app window, `a` open API
   keys in its own app window, `Esc` close. Chat and API keys dismiss the panel
-  before handing off; Install / Update / Retry keep it open.
+  before handing off; Install / Retry keep it open.
 - **One poller for all monitors**: the widget declares a `service`, so a
   multi-monitor bar does not make two API requests a minute.
 
@@ -80,18 +82,15 @@ omarchy bar set net.fidelramos.venice tokenStorage file
 The two backends are never silently mixed: storing a token in one clears the
 other, so a stale copy cannot keep answering after a switch.
 
-On the first successful balance the plugin also installs **Venice.ai as an app** via
-`omarchy-webapp-install`: a normal launcher in your app menu whose `Exec` is
-`omarchy-launch-webapp "https://venice.ai/chat"`. The icon is reused if it already
-exists, otherwise it is fetched from the site. Turn the autoinstall of the app off with:
+To add **Venice.ai as an app**, use **Install app** in the panel's APP section.
+This runs `omarchy-webapp-install` and creates a normal launcher in your app
+menu whose `Exec` is `omarchy-launch-webapp "https://venice.ai/chat"`. The icon
+is reused if it already exists, otherwise it is fetched from the site.
 
-```bash
-omarchy bar set net.fidelramos.venice autoInstallApp false
-```
-
-The APP section in the panel shows the current state and offers
-Install / Update / Open. To remove the app manually, use
-`omarchy webapp remove "Venice.ai"`.
+The plugin never modifies an existing `Venice.ai` launcher. If one is already
+present, the panel says so and leaves it alone; the **Install app** button only
+appears when there is no launcher at all. To replace an existing one, remove it
+first with `omarchy webapp remove "Venice.ai"`.
 
 ## Settings
 
@@ -99,7 +98,6 @@ Install / Update / Open. To remove the app manually, use
 omarchy bar set net.fidelramos.venice barLabel usd
 omarchy bar set net.fidelramos.venice refreshIntervalSec 120
 omarchy bar set net.fidelramos.venice warnAtPercent 15
-omarchy bar set net.fidelramos.venice autoInstallApp false
 ```
 
 | Key | Default | What it does |
@@ -108,7 +106,6 @@ omarchy bar set net.fidelramos.venice autoInstallApp false
 | `barLabel` | `none` | `none` is the ring only. `auto` is the DIEM percentage when staking, otherwise USD. Also `percent`, `usd`, `diem`, `both`. |
 | `warnAtPercent` | `25` | At or below this percentage of the DIEM allocation the ring and progress bar switch to `urgent`. |
 | `tokenStorage` | `keyring` | `keyring` or `file`. See above. |
-| `autoInstallApp` | `true` | After the first successful balance, install or update the Venice.ai web app launcher once. Turn off to leave your app launcher untouched. |
 
 The bar button: **left** opens the panel, **right** refreshes, **middle**
 copies the balance summary to the clipboard.
@@ -121,7 +118,7 @@ Service.qml          one poller: timer, token lifecycle, last good snapshot
 VeniceRing.qml       Canvas ring gauge, theme colours only
 Model.js             pure parsing, formatting, tiers, labels, tooltips
 bin/venice-billing   token lookup + curl; prints one JSON object
-bin/venice-app       status/ensure/install for the Venice.ai web app launcher
+bin/venice-app       status/install for the Venice.ai web app launcher
 ```
 
 `bin/venice-billing balance` reads the token, calls
@@ -158,14 +155,12 @@ omarchy-shell net.fidelramos.venice api        # close the panel, open API keys 
   marks it with an urgent dot and `last known` in the tooltip. It retries on
   the normal interval.
 - **Nothing after an edit to `Service.qml`**: `omarchy restart shell`.
-- **App did not install**: the panel APP section shows the error and a Retry.
-  The installer fetches the favicon, so a network or icon failure leaves the
-  launcher untouched and the one-shot marker unwritten. The install also
-  refuses to overwrite a `Venice.ai` launcher that was not created by
-  `omarchy-webapp-install`; remove it first if you want the managed one.
-- **App menu still opens the old page**: the automatic update is one-shot. Use
-  **Update to Chat** in the panel, or
-  `omarchy webapp install "Venice.ai" "https://venice.ai/chat" ""`.
+- **App did not install**: the APP section shows the error and a Retry. The
+  installer fetches the favicon, so a network or icon failure leaves the
+  launcher untouched.
+- **Existing app left alone**: a `Venice.ai` launcher already in your app menu
+  is never modified. Remove it with `omarchy webapp remove "Venice.ai"` if you
+  want the plugin to install its own.
 
 ## Development
 
@@ -182,9 +177,9 @@ the token never appears in curl's argv, the keyring failure path, and the
 file permissions.
 
 `tests/app.test.sh` stubs `omarchy-webapp-install` and `update-desktop-database`
-in a temporary `$HOME`. It checks install, the `/` → `/chat` update, the
-one-shot marker, the foreign-launcher guard, icon reuse vs fetch, and failure
-handling.
+in a temporary `$HOME`. It checks install, icon reuse, the existing-launcher
+guard for managed and foreign launchers, failure handling, and status
+reporting.
 
 To test a working tree in place:
 

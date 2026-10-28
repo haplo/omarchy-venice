@@ -28,7 +28,7 @@ helpers in `bin/` are POSIX shell scripts run as `/bin/sh`.
 | `VeniceRing.qml` | Canvas ring gauge. Theme colors only. |
 | `Model.js` | Pure parsing, normalization, formatting, tiers, labels, tooltips. |
 | `bin/venice-billing` | Token lookup, balance request, token store/clear. Prints JSON. |
-| `bin/venice-app` | Status/ensure/install for the `Venice.ai` web app launcher. |
+| `bin/venice-app` | Status/install for the `Venice.ai` web app launcher. |
 | `tests/model.test.js` | Node tests for `Model.js`. |
 | `tests/helper.test.sh` | Shell tests for `bin/venice-billing`, with stubbed `curl`/`secret-tool`. |
 | `tests/app.test.sh` | Shell tests for `bin/venice-app`, with stubbed Omarchy installer. |
@@ -96,6 +96,13 @@ next, not expose tokens or raw headers.
 
 Helpers require `jq` and POSIX `sh` only. Do not introduce bash features.
 Failures are reported, not retried silently.
+
+### App launcher
+
+`bin/venice-app install` only creates a launcher when no `Venice.ai` desktop
+file exists. Never edit, replace, or remove an existing launcher, even when the
+user clicks Install: answer with `kind:"exists"` and let the panel explain.
+There is no automatic install; only the APP section's button invokes the helper.
 
 ### Pure model logic
 

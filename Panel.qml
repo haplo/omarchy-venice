@@ -24,7 +24,6 @@ Panel {
   function pushSettings() {
     if (!venice) return
     venice.settings = settings
-    venice.settingsReady = true
   }
   onSettingsChanged: pushSettings()
   onVeniceChanged: pushSettings()
@@ -144,28 +143,26 @@ Panel {
   readonly property string appStatus: venice ? venice.appStatus : "unknown"
   readonly property bool appBusy: venice ? venice.appBusy : false
   readonly property string appError: venice ? venice.appError : ""
-  readonly property bool appNeedsInstall: appStatus === "missing"
-    || appStatus === "outdated" || appStatus === "error"
 
-  readonly property string appCaption: {
-    switch (appStatus) {
-      case "installed": return "Installed · Chat opens in its own window"
-      case "outdated": return "The launcher still opens the landing page"
-      case "missing": return "Not in your app launcher"
-      case "foreign": return "Another Venice.ai launcher exists; left alone"
-      case "installing": return "Installing the app…"
-      case "error": return "Could not install the app"
-      default: return "Checking…"
-    }
-  }
+  // The install button only appears when no launcher exists. An existing
+  // Venice.ai launcher (managed, outdated, or foreign) is never touched; the
+  // note below explains why the button is absent. "error" covers both a failed
+  // status read and a failed install, so Retry re-checks the launcher rather
+  // than blindly installing.
+  readonly property bool appCanInstall: appStatus === "missing"
+    || appStatus === "installing" || appStatus === "error"
 
   readonly property string appButtonText: {
     if (appBusy || appStatus === "installing") return "Installing…"
-    if (appStatus === "missing") return "Install app"
-    if (appStatus === "outdated") return "Update to Chat"
     if (appStatus === "error") return "Retry"
-    if (appStatus === "installed" || appStatus === "foreign") return "Open app"
-    return "Checking…"
+    return "Install app"
+  }
+
+  readonly property string appNote: {
+    if (appStatus === "error" && appError !== "") return appError
+    if (appStatus === "outdated") return "Venice.ai is already in your app launcher; left unchanged."
+    if (appStatus === "foreign") return "Another Venice.ai launcher exists; left unchanged."
+    return ""
   }
 
   property string actionStatus: ""
@@ -211,8 +208,8 @@ Panel {
 
   function appAction() {
     if (!venice || appBusy) return
-    if (appNeedsInstall) venice.installApp()
-    else if (appStatus === "installed" || appStatus === "foreign") root.openChat()
+    if (appStatus === "missing") venice.installApp()
+    else if (appStatus === "error") venice.checkApp()
   }
 
   function copySummary() {
@@ -720,46 +717,8 @@ Panel {
             fontFamily: root.fontFamily
           }
 
-          Text {
+          RowLayout {
             width: parent.width
-            text: root.appCaption
-            color: root.dim
-            font.family: root.fontFamily
-            font.pixelSize: Commons.Style.font.body
-            wrapMode: Text.WordWrap
-          }
-
-          Button {
-            text: root.appButtonText
-            bordered: true
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-            enabled: !root.appBusy
-              && root.appStatus !== "unknown"
-              && root.appStatus !== "installing"
-            onClicked: root.appAction()
-          }
-
-          Text {
-            width: parent.width
-            visible: root.appStatus === "error" && root.appError !== ""
-            text: root.appError
-            color: root.urgent
-            font.family: root.fontFamily
-            font.pixelSize: Commons.Style.font.caption
-            wrapMode: Text.WordWrap
-          }
-        }
-
-        // ----------------------------------------------------------- footer
-
-        Column {
-          width: parent.width
-          spacing: Commons.Style.space(6)
-
-          PanelSeparator { foreground: root.foreground }
-
-          Row {
             spacing: Commons.Style.space(8)
 
             Button {
@@ -779,7 +738,38 @@ Panel {
               fontFamily: root.fontFamily
               onClicked: root.openApi()
             }
+
+            Item { Layout.fillWidth: true }
+
+            Button {
+              visible: root.appCanInstall
+              text: root.appButtonText
+              bordered: true
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              enabled: !root.appBusy && root.appStatus !== "installing"
+              onClicked: root.appAction()
+            }
           }
+
+          Text {
+            width: parent.width
+            visible: text !== ""
+            text: root.appNote
+            color: root.appStatus === "error" ? root.urgent : root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Commons.Style.font.caption
+            wrapMode: Text.WordWrap
+          }
+        }
+
+        // ----------------------------------------------------------- footer
+
+        Column {
+          width: parent.width
+          spacing: Commons.Style.space(6)
+
+          PanelSeparator { foreground: root.foreground }
 
           Text {
             width: parent.width

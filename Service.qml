@@ -35,18 +35,11 @@ Item {
   property string appUrl: ""
   property string appError: ""
   property bool appBusy: false
-  property bool appAutoChecked: false
   property bool appCheckPending: false
 
   readonly property string pluginDirectory: Model.fileUrlPath(Qt.resolvedUrl("."))
   readonly property string helperPath: pluginDirectory + "/bin/venice-billing"
   readonly property string appHelperPath: pluginDirectory + "/bin/venice-app"
-
-  // A widget with no shell.json overrides legitimately receives {}, so
-  // "settings arrived" is an explicit handshake from the panel rather than a
-  // property of the object.
-  property bool settingsReady: false
-  readonly property bool autoInstallApp: setting("autoInstallApp", true) === true
 
   readonly property int refreshIntervalSec: intSetting("refreshIntervalSec", 30, 15, 3600)
   readonly property int warnAtPercent: intSetting("warnAtPercent", 25, 5, 50)
@@ -80,7 +73,6 @@ Item {
   }
 
   onSettingsChanged: {
-    settingsReady = true
     // Switching backends must not keep serving state from the old one, and a
     // paused backend should get an immediate retry so the panel reflects the
     // new setting.
@@ -89,7 +81,6 @@ Item {
       backendPaused = false
       refresh(true)
     }
-    maybeAutoInstall()
   }
 
   // --------------------------------------------------------------- actions
@@ -153,17 +144,14 @@ Item {
     appStatusProc.running = true
   }
 
-  function runApp(action) {
+  function installApp() {
     if (!active || appBusy || appActionProc.running) return
     appBusy = true
     appError = ""
     appStatus = "installing"
-    appActionProc.command = ["/bin/sh", appHelperPath, action]
+    appActionProc.command = ["/bin/sh", appHelperPath, "install"]
     appActionProc.running = true
   }
-
-  function ensureApp() { runApp("ensure") }
-  function installApp() { runApp("install") }
 
   function openApp() {
     // Chromium names the --app window class brave-venice.ai__chat-Default (or
@@ -182,17 +170,6 @@ Item {
       "venice.ai__settings_api",
       "https://venice.ai/settings/api"
     ])
-  }
-
-  // One-shot: only after a successful balance proves the plugin is really in
-  // use, and only once the panel's settings have arrived (autoInstallApp can
-  // be turned off). The helper's marker makes this survive restarts.
-  function maybeAutoInstall() {
-    // `hasData` is a binding over `snapshot`; inside applyResult it can still
-    // report the previous value, so look at the property that was just set.
-    if (!active || appAutoChecked || !settingsReady || snapshot === null || !autoInstallApp) return
-    appAutoChecked = true
-    runApp("ensure")
   }
 
   // --------------------------------------------------------------- results
@@ -234,7 +211,6 @@ Item {
     lastError = ""
     lastUpdated = Date.now()
     now = lastUpdated
-    maybeAutoInstall()
   }
 
   // --------------------------------------------------------------- plumbing
