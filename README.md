@@ -52,6 +52,12 @@ shell deliberately keeps live bar-widget and service instances across a
 rescan. If a UI or service change does not appear, `omarchy restart shell`
 loads the new code.
 
+To uninstall:
+
+```bash
+omarchy plugin remove net.fidelramos.venice
+```
+
 ## First run
 
 Click the ring and paste an admin API token from
